@@ -11,6 +11,12 @@ FROM
 В противном случае 'Cheap' Написать запрос двумя способами -  
 с применением операторов IF и CASE */
 SELECT 
+    id, order_id, unit_price, quantity,
+    IF(unit_price > 10, 'Expensive', 'Cheap') AS category
+FROM 
+    order_details;
+    -- или 
+SELECT 
     id, order_id, unit_price, quantity, 
     CASE
         WHEN unit_price > 10 THEN 'Expensive'
