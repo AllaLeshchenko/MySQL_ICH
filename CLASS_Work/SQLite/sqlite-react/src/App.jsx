@@ -1,128 +1,112 @@
-import { useState, useEffect } from 'react' 
-import initSqlJs from "sql.js";
+import { useEffect, useState } from "react"; // Импортируем хуки React
+import initSqlJs from "sql.js";              // Импортируем sql.js для работы с SQLite в браузере
 
-function App() {
+export default function App() {
   // Состояние для базы данных SQLite
-  const [db, setDb] = useState(null)
+  const [db, setDb] = useState(null);
 
   // Состояние для текущего SQL-запроса
-  const [query, setQuery] = useState("SELECT * FROM employees;")
+  const [query, setQuery] = useState("SELECT * FROM employees;");
 
-  // Состояния для результата выполнения SQL-запроса
-  const [result, setResult] = useState(null)
+  // Состояние для результата выполнения SQL-запроса
+  const [result, setResult] = useState(null);
 
-  // Состояние для таблиц с данными (будет массив обьектов: таблица + колонки + строки)
-  const [tablesWithData, setTablesWithData] = useState([])
+  // Состояние для таблиц с данными (будет массив объектов: таблица + колонки + строки)
+  const [tablesWithData, setTablesWithData] = useState([]);
 
   // Хук, который выполнится один раз после монтирования компонента
-  useEffect(()=>{
-   // Загружаем и инициализируем SQLite через WebAssembly
-     initSqlJs({locateFile: file => `https://sql.js.org/dist/${file}`}).then(SQL => {
-      // Создаем новую базу данных в оперативной памяти
-      const db = new SQL.Database();
+  useEffect(() => {
+    // Загружаем и инициализируем SQLite через WebAssembly
+    initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` }).then(SQL => {
+      const db = new SQL.Database(); // Создаем новую базу данных в памяти (in-memory)
 
-      // Создаем таблицу сотрудников
+      // Создаём таблицу сотрудников
       db.run(`
-         CREATE TABLE employees (
-           id INTENGER Primary KEY AUTOINCREMENT,
-           name VARCHAR(100) NOT NULL,
-           age INT,
-           salary INT NOT NULL,
-           department_id INT
-          );
-        `);
+        CREATE TABLE employees (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          age INTEGER,
+          salary INTEGER,
+          department_id INTEGER
+        );
+      `);
 
-        // Создаем таблицу отделов
-        db.run(`
-            CREATE TABLE departments (
-             id INTENGER Primary KEY AUTOINCREMENT,
-             name VARCHAR(100) NOT NULL,
-            );
-          `);
+      // Создаём таблицу отделов
+      db.run(`
+        CREATE TABLE departments (
+          id INTEGER PRIMARY KEY,
+          name TEXT
+        );
+      `);
 
-        // Вставляем данные в таблицу departments
-        db.run(`
-            INSERT INTO departments (name) VALUES 
-            ('HR'), 
-            ('IT'), 
-            ('Marketing');
-          `);
+      // Вставляем данные в таблицу departments
+      db.run(`
+        INSERT INTO departments (id, name) VALUES
+          (1, 'HR'),
+          (2, 'IT'),
+          (3, 'Marketing');
+      `);
 
-        // Данные для таблицы сотрудникоы(включая связи сотделами)
-        const employees = [
-          ['Alice', 25, 50000, 1],
-          ['Bob', 30, 60000, 2],
-          ['Charlie', 35, 70000, 2],
-          ['John', 40, 80000, 3],
-          ['Eve', 45, 90000, 1]
-        ];
+      // Данные для таблицы сотрудников (включая связи с отделами)
+      const employees = [
+        [1, "Alice", 25, 50000, 1],
+        [2, "Bob", 30, 60000, 2],
+        [3, "Charlie", 35, 70000, 2],
+        [4, "David", 40, 80000, 3],
+        [5, "Eve", 45, 90000, 1],
+      ];
 
-        //Готовим выражения для вставки строк в таблицу tmployees
-        const stmt = db.prepare("INSERT INTO employees (name, age, salary, department_id) VALUES (?, ?, ?, ?)");
-        // Вставляем каждую строку
-        for (let row of employees) {
-          stmt.run(row)
-        }
+      // Готовим выражение для вставки строк в таблицу employees
+      const stmt = db.prepare("INSERT INTO employees VALUES (?, ?, ?, ?, ?)");
+      for (let row of employees) stmt.run(row); // Вставляем каждую строку
+      stmt.free(); // Освобождаем ресурсы после вставки
 
-        // Освобождаем ресурсы после вставки
-        stmt.free();
+      setDb(db); // Сохраняем базу данных в состояние
 
-        // Сохраняем базу данных в состояние
-        setDb(db);
+      // Получаем список таблиц, исключая системные (sqlite_internal и т.д.)
+      const tableRes = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+      const tables = tableRes[0]?.values.map(row => row[0]) || []; // Извлекаем названия таблиц
 
-        // Получить список таблиц, исключаем системные таблицы
-        const tableRes = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'; ");
-        console.log('tableRes:' + tableRes);
-        // Извлекаем название таблиц
-        const tables = tableRes[0]?.values.map(row => row[0]) || [];
-        // values => [['employees'], ['departmens']]
+      // Для каждой таблицы извлекаем все данные
+      const dataPerTable = tables.map(table => {
+        const res = db.exec(`SELECT * FROM ${table}`);
+        return {
+          name: table,
+          columns: res[0]?.columns || [],
+          rows: res[0]?.values || [],
+        };
+      });
 
-        // Для каждой таблицы извлекаем данные
-        const dataPerTable = tables.map(table => {
-          const res = db.exec(`SELECT * FROM ${table}`);
-          console.log('res:' + res);
-          return {
-            name: table, 
-            columns: res[0]?.columns || [],
-            rows: res[0]?.values || [],
-          }
-        });
-
-        // Сохранение данных всех таблиц в состояние
-        setTablesWithData(dataPerTable);
-     });
+      setTablesWithData(dataPerTable); // Сохраняем данные всех таблиц в состояние
+    });
   }, []);
 
-  // Создадим функцию выполнения SQL-запроса по кнопке
+  // Функция выполнения SQL-запроса по кнопке
   const execute = () => {
     try {
-      // Выполныть SQL-запрос
-      const res = db.exec(query);
-      console.log('res[0:' + res[0])
-      // Сохраняем первую талицу результатов
-      setResult(res[0] || {colimns: [], valies: []});
-    } catch (error) {
-       // В случае ошибки сохраняем сообщение об ошибке, как результат
-       setResult({columns: ['Error'], values: [error.message]})
+      const res = db.exec(query); // Выполняем SQL-запрос
+      setResult(res[0] || { columns: [], values: [] }); // Сохраняем первую таблицу результата
+    } catch (e) {
+      // В случае ошибки сохраняем сообщение об ошибке как результат
+      setResult({ columns: ["Error"], values: [[e.message]] });
     }
   };
 
- return (
-   <div style={{padding: 20}}>
-     <h2>SQLite + React: таблици с данными и SQL-запросы</h2>
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>SQLite + React: Таблицы с данными и SQL-запросы</h2>
 
-     {/* Вывод всех таблиц и их содержимое */}
-
-     <div style={{marginBottom: 30}}>
-      <h3>Все таблицы в базе</h3>
+      {/* Вывод всех таблиц и их содержимого */}
+      <div style={{ marginBottom: 30 }}>
+        <strong>Все таблицы в базе:</strong>
         {tablesWithData.map(table => (
-          <div key={table.name} style={{marginTop: 20}}>
+          <div key={table.name} style={{ marginTop: 20 }}>
             <h4>{table.name}</h4>
             <table border="1" cellPadding="5">
               <thead>
                 <tr>
                   {table.columns.map(col => (
-                    <th key={col}>{col}</th> // Название колонок
+                    <th key={col}>{col}</th> // Заголовки колонок
                   ))}
                 </tr>
               </thead>
@@ -130,7 +114,7 @@ function App() {
                 {table.rows.map((row, idx) => (
                   <tr key={idx}>
                     {row.map((val, i) => (
-                      <td key={i}>{val}</td> // Ячейка таблицы
+                      <td key={i}>{val}</td> // Ячейки данных
                     ))}
                   </tr>
                 ))}
@@ -138,47 +122,44 @@ function App() {
             </table>
           </div>
         ))}
-     </div>
- 
-     {/* Поле для выполнения произвольныч SQL-запросов */}
-     <textarea 
-       rows={6}
-       style={{width: '100%', fontFamily: 'monospace'}}
-       value={query}
-       onChange={event => setQuery(event.target.value)}
-     />
+      </div>
 
-    <div style={{marginTop: 10}}>
-      <button onClick={execute}>Execute</button>
-    </div>
+      {/* Поле для выполнения произвольных SQL-запросов */}
+      <textarea
+        rows={6}
+        style={{ width: "100%", fontFamily: "monospace" }}
+        value={query}
+        onChange={e => setQuery(e.target.value)} // Обновление состояния при изменении текста
+      />
+      <div style={{ marginTop: 10 }}>
+        <button onClick={execute}>Execute</button> {/* Кнопка запуска запроса */}
+      </div>
 
-    {/* Результат выполнения SQL-запросов */}
-    {result && (
-      <div style={{marginTop: 30}}>
-        <h4>Результат запроса:</h4>
-         <table border="1" cellPadding="5">
-              <thead>
-                <tr>
-                  {result.columns.map(col => (
-                    <th key={col}>{col}</th> // Название колонок
+      {/* Результат выполнения SQL-запроса */}
+      {result && (
+        <div style={{ marginTop: 30 }}>
+          <strong>Результат запроса:</strong>
+          <table border="1" cellPadding="5" style={{ marginTop: 10 }}>
+            <thead>
+              <tr>
+                {result.columns.map(col => (
+                  <th key={col}>{col}</th> // Заголовки результата
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {result.values.map((row, idx) => (
+                <tr key={idx}>
+                  {row.map((val, i) => (
+                    <td key={i}>{val}</td> // Значения результата
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {result.values.map((row, idx) => (
-                  <tr key={idx}>
-                    {row.map((val, i) => (
-                      <td key={i}>{val}</td> // Ячейка таблицы
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
+              ))}
+            </tbody>
           </table>
-      </div>
-    )}
-
-   </div>
- )
+        </div>
+      )}
+    </div>
+  );
 }
 
-export default App
